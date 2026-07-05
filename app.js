@@ -98,9 +98,19 @@ async function fetchRates() {
           return; // Пропускаем эту запись
         }
         ratesFromDb[rate.currency_code] = parsedRate;
+
         // Обновляем время последнего обновления (берем самое свежее)
-        if (!updateTime || new Date(rate.last_updated) > new Date(updateTime)) {
-          updateTime = new Date(rate.last_updated).getTime();
+        const currentRateTime = new Date(rate.last_updated);
+        console.log(`Обработка валюты ${rate.currency_code}, last_updated: ${rate.last_updated}, преобразовано в: ${currentRateTime.toISOString()}`);
+
+        if (isNaN(currentRateTime.getTime())) {
+          console.warn(`Не удалось преобразовать last_updated для ${rate.currency_code}: ${rate.last_updated}`);
+          return; // Пропускаем эту запись для updateTime, если дата некорректна
+        }
+
+        if (!updateTime || currentRateTime > new Date(updateTime)) {
+          updateTime = currentRateTime.getTime();
+          console.log(`Новое время обновления установлено для ${rate.currency_code}: ${new Date(updateTime).toISOString()}`);
         }
       });
 
