@@ -14,8 +14,8 @@ const CURRENCIES = {
   USD: { symbol: '$', name: 'Доллар' }
 };
 
-// Инициализация Supabase клиента
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Supabase клиент будет инициализирован с использованием глобального объекта 'supabase'
+// из SDK, который загружен в index.html
 
 // КОНФИГУРАЦИЯ ДЛЯ ЛОКАЛЬНОГО КЭШИРОВАНИЯ (уменьшаем TTL для более частых проверок)
 const CACHE_KEY = 'converter_rates_cache';
@@ -310,6 +310,16 @@ refreshBtn.addEventListener('click', () => {
 // ИНИЦИАЛИЗАЦИЯ
 // ═══════════════════════════════════════════════
 async function init() {
+  // Инициализация Supabase клиента (используя глобальный объект из SDK)
+  try {
+    supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    console.log('Supabase клиент инициализирован.');
+  } catch (e) {
+    console.error('Ошибка инициализации Supabase клиента:', e);
+    showStatus('Ошибка подключения к базе данных.', 'error');
+    // Не прерываем выполнение, т.к. могут быть данные в кэше
+  }
+
   // Регистрация Service Worker
   if ('serviceWorker' in navigator) {
     try {
