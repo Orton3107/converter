@@ -1,11 +1,11 @@
 'use strict';
 
 // ═══════════════════════════════════════════════
-// КОНФИГУРАЦИЯ
-// ═══════════════════════════════════════════════
-const API_URL = 'https://open.er-api.com/v6/latest/USD';
-const CACHE_KEY = 'converter_rates_cache';
-const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 часа в миллисекундах
+// КОНФИГУРАЦИЯ SUPABASE
+// Для фронтенда ключи обычно встраиваются напрямую, так как .env не работает в браузере.
+// В продакшене эти значения могут быть захардкожены или загружены из другого безопасного источника.
+const SUPABASE_URL = 'https://knnthxhaqwfkfedfgcgk.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtubnRoeGhhcXdma2ZlZGZnY2drIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyNDU4MTcsImV4cCI6MjA5ODgyMTgxN30.RZ8v2S3frO9vTu0bXUp9cRTPbaZijivcwfwK0284eJM';
 
 const CURRENCIES = {
   UAH: { symbol: '₴', name: 'Гривна' },
@@ -13,6 +13,13 @@ const CURRENCIES = {
   EUR: { symbol: '€', name: 'Евро' },
   USD: { symbol: '$', name: 'Доллар' }
 };
+
+// Инициализация Supabase клиента
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// КОНФИГУРАЦИЯ ДЛЯ ЛОКАЛЬНОГО КЭШИРОВАНИЯ (опционально, но рекомендуется для PWA)
+const CACHE_KEY = 'converter_rates_cache';
+const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 часа в миллисекундах
 
 // ═══════════════════════════════════════════════
 // DOM ЭЛЕМЕНТЫ
@@ -47,12 +54,12 @@ function loadFromCache() {
   }
 }
 
-function saveToCache(ratesData, updateTime) {
+function saveToCache(ratesData, updateTime, source = 'open.er-api.com') {
   try {
     const payload = {
       rates: ratesData,
       timestamp: updateTime,
-      source: 'open.er-api.com'
+      source: source
     };
     localStorage.setItem(CACHE_KEY, JSON.stringify(payload));
   } catch (e) {
@@ -61,43 +68,71 @@ function saveToCache(ratesData, updateTime) {
 }
 
 // ═══════════════════════════════════════════════
-// ПОЛУЧЕНИЕ КУРСОВ
+// ПОЛУЧЕНИЕ КУРСОВ ИЗ SUPABASE
 // ═══════════════════════════════════════════════
 async function fetchRates() {
   refreshBtn.classList.add('loading');
   try {
-    const response = await fetch(API_URL, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    if (data.result !== 'success' || !data.rates) {
-      throw new Error('Некорректный ответ API');
+    // 1. Пробуем загрузить из Supabase
+    const { data: supabaseData, error: supabaseError } = await supabase
+      .from('currency_rates')
+      .select('*');
+
+    if (supabaseError) {
+      throw new Error(`Ошибка Supabase: ${supabaseError.message}`);
     }
-    // Извлекаем только нужные валюты
-    const filtered = {
-      USD: data.rates.USD,
-      EUR: data.rates.EUR,
-      UAH: data.rates.UAH,
-      MDL: data.rates.MDL
-    };
-    const updateTime = data.time_last_update_unix
-      ? data.time_last_update_unix * 1000
-      : Date.now();
-    rates = filtered;
-    lastUpdate = updateTime;
-    saveToCache(filtered, updateTime);
-    updateLastUpdateDisplay();
-    showStatus('Курсы обновлены', 'success');
-  } catch (error) {
-    console.error('Ошибка загрузки курсов:', error);
-    // Пытаемся использовать кэш даже если устарел
+
+    if (supabaseData && supabaseData.length > 0) {
+      // Преобразуем данные из Supabase в формат { USD: X, EUR: Y, ... }
+      const ratesFromDb = {};
+      let updateTime = null;
+
+      supabaseData.forEach(rate => {
+        ratesFromDb[rate.currency_code] = parseFloat(rate.rate_to_usd);
+        // Обновляем время последнего обновления (берем самое свежее)
+        if (!updateTime || new Date(rate.last_updated) > new Date(updateTime)) {
+          updateTime = new Date(rate.last_updated).getTime();
+        }
+      });
+
+      // Если есть данные, сохраняем их
+      if (Object.keys(ratesFromDb).length > 0) {
+        rates = ratesFromDb;
+        lastUpdate = updateTime || Date.now();
+        saveToCache(ratesFromDb, lastUpdate, 'supabase'); // Сохраняем в кэш, указывая источник
+        updateLastUpdateDisplay();
+        showStatus('Курсы обновлены из Supabase', 'success');
+        return; // Успешно загрузили из Supabase, выходим
+      }
+    }
+
+    // 2. Если данные в Supabase отсутствуют или пустые, пробуем кэш
     const cached = loadFromCache();
     if (cached && cached.data.rates) {
       rates = cached.data.rates;
       lastUpdate = cached.data.timestamp;
       updateLastUpdateDisplay();
-      showStatus('Нет сети — используются кэшированные курсы', 'error');
+      showStatus('Данные в Supabase отсутствуют, используются кэшированные курсы', 'warning');
+      return;
+    }
+
+    // 3. Если и кэш пуст, можно попробовать загрузить из внешнего API как запасной вариант
+    // (или просто показать ошибку, если это не предусмотрено логикой приложения)
+    console.warn('Данные в Supabase и кэше отсутствуют. Попытка загрузки из внешнего API.');
+    // Здесь можно добавить логику fallback к fetch(API_URL) если необходимо
+    throw new Error('Данные о курсах валют недоступны. Попробуйте обновить позже.');
+
+  } catch (error) {
+    console.error('Ошибка загрузки курсов:', error);
+    // В случае любой ошибки пробуем использовать кэш, даже если он устарел
+    const cached = loadFromCache();
+    if (cached && cached.data.rates) {
+      rates = cached.data.rates;
+      lastUpdate = cached.data.timestamp;
+      updateLastUpdateDisplay();
+      showStatus(`Ошибка сети: ${error.message}. Используются кэшированные курсы.`, 'error');
     } else {
-      showStatus('Не удалось загрузить курсы. Проверьте интернет.', 'error');
+      showStatus(`Не удалось загрузить курсы: ${error.message}. Проверьте интернет.`, 'error');
     }
   } finally {
     refreshBtn.classList.remove('loading');

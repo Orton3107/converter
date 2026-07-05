@@ -2,3 +2,8 @@
 *.log
 node_modules/
 .vscode/
+
+# dotenv environment variables file
+.env
+# Node.js script for updating rates (contains logic to read .env)
+update-rates.js
