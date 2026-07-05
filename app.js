@@ -74,62 +74,73 @@ async function fetchRates() {
   refreshBtn.classList.add('loading');
   try {
     // 1. Пробуем загрузить из Supabase
-    console.log('Попытка загрузки курсов из Supabase...');
+    console.log('--- НАЧАЛО ПОПЫТКИ ЗАГРУЗКИ ИЗ SUPABASE ---');
     const { data: supabaseData, error: supabaseError } = await supabase
       .from('currency_rates')
       .select('*');
 
     if (supabaseError) {
-      console.error('Ошибка Supabase:', supabaseError);
+      console.error('ОШИБКА SUPABASE:', supabaseError);
       throw new Error(`Ошибка Supabase: ${supabaseError.message}`);
     }
 
-    console.log('Данные из Supabase получены:', supabaseData);
+    console.log('Данные из Supabase получены (raw):', supabaseData);
 
     if (supabaseData && supabaseData.length > 0) {
+      console.log(`Количество записей из Supabase: ${supabaseData.length}`);
       // Преобразуем данные из Supabase в формат { USD: X, EUR: Y, ... }
       const ratesFromDb = {};
       let updateTime = null;
 
       supabaseData.forEach(rate => {
+        console.log(`Обработка записи для валюты: ${rate.currency_code}, rate_to_usd: "${rate.rate_to_usd}", last_updated: "${rate.last_updated}"`);
         const parsedRate = parseFloat(rate.rate_to_usd);
+        console.log(`Парсинг rate_to_usd: "${rate.rate_to_usd}" -> ${parsedRate}`);
+
         if (isNaN(parsedRate)) {
-          console.warn(`Некорректный курс для ${rate.currency_code}: ${rate.rate_to_usd}`);
+          console.warn(`--- НЕКОРРЕКТНЫЙ КУРС для ${rate.currency_code}: ${rate.rate_to_usd}. Пропускаем. ---`);
           return; // Пропускаем эту запись
         }
         ratesFromDb[rate.currency_code] = parsedRate;
+        console.log(`Добавлен курс для ${rate.currency_code}: ${parsedRate}`);
 
         // Обновляем время последнего обновления (берем самое свежее)
         const currentRateTime = new Date(rate.last_updated);
-        console.log(`Обработка валюты ${rate.currency_code}, last_updated: ${rate.last_updated}, преобразовано в: ${currentRateTime.toISOString()}`);
+        console.log(`Парсинг last_updated: "${rate.last_updated}" -> ${currentRateTime.toISOString()}`);
 
         if (isNaN(currentRateTime.getTime())) {
-          console.warn(`Не удалось преобразовать last_updated для ${rate.currency_code}: ${rate.last_updated}`);
+          console.warn(`--- НЕ УДАЛОСЬ ПРЕОБРАЗОВАТЬ last_updated для ${rate.currency_code}: ${rate.last_updated}. Пропускаем для updateTime. ---`);
           return; // Пропускаем эту запись для updateTime, если дата некорректна
         }
 
         if (!updateTime || currentRateTime > new Date(updateTime)) {
           updateTime = currentRateTime.getTime();
-          console.log(`Новое время обновления установлено для ${rate.currency_code}: ${new Date(updateTime).toISOString()}`);
+          console.log(`--- НОВОЕ ВРЕМЯ ОБНОВЛЕНИЯ УСТАНОВЛЕНО: ${new Date(updateTime).toISOString()} (из ${rate.currency_code}) ---`);
         }
       });
 
-      console.log('Сформированный ratesFromDb:', ratesFromDb);
-      console.log('Время последнего обновления из БД:', updateTime ? new Date(updateTime).toISOString() : 'null');
+      console.log('--- ФИНАЛЬНЫЙ ratesFromDb после обработки: ---', ratesFromDb);
+      console.log('--- ФИНАЛЬНОЕ ВРЕМЯ ОБНОВЛЕНИЯ из БД (timestamp): ---', updateTime);
+      console.log('--- ФИНАЛЬНОЕ ВРЕМЯ ОБНОВЛЕНИЯ из БД (Date): ---', updateTime ? new Date(updateTime).toISOString() : 'null');
 
       // Если есть данные, сохраняем их
       if (Object.keys(ratesFromDb).length > 0) {
+        console.log('--- ДЕЙСТВИЕ: Есть валидные ratesFromDb. Присваиваем rates и lastUpdate. ---');
         rates = ratesFromDb;
         lastUpdate = updateTime || Date.now();
-        saveToCache(ratesFromDb, lastUpdate, 'supabase'); // Сохраняем в кэш, указывая источник
+        console.log('--- rates присвоено:', rates);
+        console.log('--- lastUpdate присвоено:', lastUpdate ? new Date(lastUpdate).toISOString() : 'null');
+        saveToCache(ratesFromDb, lastUpdate, 'supabase');
+        console.log('--- Данные сохранены в кэш. ---');
         updateLastUpdateDisplay();
         showStatus('Курсы обновлены из Supabase', 'success');
+        console.log('--- ВЫХОД ИЗ fetchRates (успех). ---');
         return; // Успешно загрузили из Supabase, выходим
       } else {
-        console.warn('Нет валидных данных в ответе Supabase.');
+        console.warn('--- ДЕЙСТВИЕ: ratesFromDb пуст после обработки. Ошибка в данных. ---');
       }
     } else {
-      console.log('Данные в Supabase отсутствуют или массив пуст.');
+      console.log('--- ДЕЙСТВИЕ: Данные в Supabase отсутствуют или массив пуст. ---');
     }
 
     // 2. Если данные в Supabase отсутствуют или пустые, пробуем кэш
