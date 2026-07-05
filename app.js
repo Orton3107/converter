@@ -74,13 +74,17 @@ async function fetchRates() {
   refreshBtn.classList.add('loading');
   try {
     // 1. Пробуем загрузить из Supabase
+    console.log('Попытка загрузки курсов из Supabase...');
     const { data: supabaseData, error: supabaseError } = await supabase
       .from('currency_rates')
       .select('*');
 
     if (supabaseError) {
+      console.error('Ошибка Supabase:', supabaseError);
       throw new Error(`Ошибка Supabase: ${supabaseError.message}`);
     }
+
+    console.log('Данные из Supabase получены:', supabaseData);
 
     if (supabaseData && supabaseData.length > 0) {
       // Преобразуем данные из Supabase в формат { USD: X, EUR: Y, ... }
@@ -88,12 +92,20 @@ async function fetchRates() {
       let updateTime = null;
 
       supabaseData.forEach(rate => {
-        ratesFromDb[rate.currency_code] = parseFloat(rate.rate_to_usd);
+        const parsedRate = parseFloat(rate.rate_to_usd);
+        if (isNaN(parsedRate)) {
+          console.warn(`Некорректный курс для ${rate.currency_code}: ${rate.rate_to_usd}`);
+          return; // Пропускаем эту запись
+        }
+        ratesFromDb[rate.currency_code] = parsedRate;
         // Обновляем время последнего обновления (берем самое свежее)
         if (!updateTime || new Date(rate.last_updated) > new Date(updateTime)) {
           updateTime = new Date(rate.last_updated).getTime();
         }
       });
+
+      console.log('Сформированный ratesFromDb:', ratesFromDb);
+      console.log('Время последнего обновления из БД:', updateTime ? new Date(updateTime).toISOString() : 'null');
 
       // Если есть данные, сохраняем их
       if (Object.keys(ratesFromDb).length > 0) {
@@ -103,17 +115,25 @@ async function fetchRates() {
         updateLastUpdateDisplay();
         showStatus('Курсы обновлены из Supabase', 'success');
         return; // Успешно загрузили из Supabase, выходим
+      } else {
+        console.warn('Нет валидных данных в ответе Supabase.');
       }
+    } else {
+      console.log('Данные в Supabase отсутствуют или массив пуст.');
     }
 
     // 2. Если данные в Supabase отсутствуют или пустые, пробуем кэш
+    console.log('Попытка загрузки из кэша...');
     const cached = loadFromCache();
     if (cached && cached.data.rates) {
+      console.log('Данные из кэша загружены:', cached.data.rates);
       rates = cached.data.rates;
       lastUpdate = cached.data.timestamp;
       updateLastUpdateDisplay();
       showStatus('Данные в Supabase отсутствуют, используются кэшированные курсы', 'warning');
       return;
+    } else {
+      console.log('Кэш пуст или недоступен.');
     }
 
     // 3. Если и кэш пуст, можно попробовать загрузить из внешнего API как запасной вариант
@@ -136,6 +156,7 @@ async function fetchRates() {
     }
   } finally {
     refreshBtn.classList.remove('loading');
+    console.log('Вызов renderResults. Текущие rates:', rates);
     renderResults();
   }
 }
