@@ -133,7 +133,7 @@ async function fetchRates() {
         saveToCache(ratesFromDb, lastUpdate, 'supabase');
         console.log('--- Данные сохранены в кэш. ---');
         updateLastUpdateDisplay();
-        showStatus('Курсы обновлены из Supabase', 'success');
+        showStatus('Курс обновлен из Supabase', 'success');
         console.log('--- ВЫХОД ИЗ fetchRates (успех). ---');
         return; // Успешно загрузили из Supabase, выходим
       } else {
@@ -151,7 +151,7 @@ async function fetchRates() {
       rates = cached.data.rates;
       lastUpdate = cached.data.timestamp;
       updateLastUpdateDisplay();
-      showStatus('Данные в Supabase отсутствуют, используются кэшированные курсы', 'warning');
+      showStatus('Данные отсутствуют, используются кэшированные курсы', 'warning');
       return;
     } else {
       console.log('Кэш пуст или недоступен.');
