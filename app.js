@@ -17,9 +17,9 @@ const CURRENCIES = {
 // Инициализация Supabase клиента
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// КОНФИГУРАЦИЯ ДЛЯ ЛОКАЛЬНОГО КЭШИРОВАНИЯ (опционально, но рекомендуется для PWA)
+// КОНФИГУРАЦИЯ ДЛЯ ЛОКАЛЬНОГО КЭШИРОВАНИЯ (уменьшаем TTL для более частых проверок)
 const CACHE_KEY = 'converter_rates_cache';
-const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 часа в миллисекундах
+const CACHE_TTL = 1 * 60 * 1000; // 1 минута в миллисекундах (будет часто обновляться из Supabase)
 
 // ═══════════════════════════════════════════════
 // DOM ЭЛЕМЕНТЫ
