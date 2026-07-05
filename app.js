@@ -309,9 +309,13 @@ async function init() {
     }
   }
 
+  // Проверяем, нужно ли принудительно обновить (для отладки)
+  const urlParams = new URLSearchParams(window.location.search);
+  const forceRefresh = urlParams.get('forceRefresh') === 'true';
+
   // Загружаем кэш
   const cached = loadFromCache();
-  if (cached) {
+  if (cached && !forceRefresh) {
     rates = cached.data.rates;
     lastUpdate = cached.data.timestamp;
     updateLastUpdateDisplay();
@@ -322,6 +326,10 @@ async function init() {
       return;
     }
     console.log('Кэш устарел, обновляем курсы…');
+  } else if (forceRefresh) {
+    console.log('Принудительное обновление: кэш игнорируется.');
+    // Можно очистить кэш принудительно, если нужно
+    // localStorage.removeItem(CACHE_KEY);
   }
 
   // Загружаем актуальные курсы
