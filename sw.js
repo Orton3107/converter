@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════
 // КОНФИГУРАЦИЯ
 // ═══════════════════════════════════════════════
-const CACHE_VERSION = 'converter-v1';
+const CACHE_VERSION = 'converter-v3';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const API_CACHE = `${CACHE_VERSION}-api`;
 
@@ -79,12 +79,21 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // ── Навигация (HTML): cache-first с fallback ──
-  if (request.mode === 'navigate') {
+  // ── App shell и навигация: network-first, кэш как офлайн-fallback ──
+  // (иначе после обновления файлов браузер отдаёт старую сборку из кэша)
+  const isShellFile = /\.(html|css|js|json|png)$/i.test(url.pathname) ||
+                      url.pathname === '/' || request.mode === 'navigate';
+  if (isShellFile) {
     event.respondWith(
-      caches.match('./index.html')
-        .then((cached) => cached || fetch(request))
-        .catch(() => caches.match('./index.html'))
+      fetch(request)
+        .then((response) => {
+          if (response.ok && response.type === 'basic') {
+            const clone = response.clone();
+            caches.open(APP_SHELL_CACHE).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request).then((cached) => cached || caches.match('./index.html')))
     );
     return;
   }

@@ -1,1 +1,128 @@
-<!DOCTYPE html> <html lang="ru"> <head> <meta charset="UTF-8"> <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"> <meta name="apple-mobile-web-app-capable" content="yes"> <meta name="mobile-web-app-capable" content="yes"> <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"> <meta name="apple-mobile-web-app-title" content="Конвертер"> <meta name="theme-color" content="#0a0e27"> <link rel="apple-touch-icon" href="icons/apple-touch-icon.png"> <link rel="icon" type="image/png" href="icons/icon-192.png"> <link rel="manifest" href="manifest.json"> <title>Конвертер валют</title> <link rel="stylesheet" href="style.css"> <!-- Supabase SDK для фронтенда --> <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script> </head> <body> <div class="app"> <header class="header"> <h1>Конвертер валют</h1> <div class="update-info"> <span id="lastUpdate">—</span> <button id="refreshBtn" class="refresh-btn" aria-label="Обновить курсы"> <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"> <polyline points="23 4 23 10 17 10"></polyline> <polyline points="1 20 1 14 7 14"></polyline> <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path> </svg> </button> </div> </header> <main class="main"> <section class="from-section"> <label class="section-label" for="amount">Сумма</label> <div class="input-row"> <input type="number" id="amount" inputmode="decimal" placeholder="0" value="100" autocomplete="off"> <select id="fromCurrency" class="currency-select"> <option value="UAH">₴ Гривна</option> <option value="MDL">L Молдавский лей</option> <option value="EUR">€ Евро</option> <option value="USD">$ Доллар</option> </select> </div> </section> <div class="swap-arrow"> <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"> <line x1="12" y1="5" x2="12" y2="19"></line> <polyline points="19 12 12 19 5 12"></polyline> </svg> </div> <section class="to-section"> <label class="section-label">Результат</label> <div id="results" class="results-list"> <!-- Результаты заполняются JS --> </div> <div class="target-currency-toggle"> <label class="section-label small">Показывать валюты:</label> <div class="toggle-chips"> <label class="chip"><input type="checkbox" value="UAH" checked> <span>₴ UAH</span></label> <label class="chip"><input type="checkbox" value="MDL" checked> <span>L MDL</span></label> <label class="chip"><input type="checkbox" value="EUR" checked> <span>€ EUR</span></label> <label class="chip"><input type="checkbox" value="USD" checked> <span>$ USD</span></label> </div> </div> </section> </main> <div id="statusMessage" class="status-message"></div> </div> <script src="app.js"></script> </body> </html>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Конвертер">
+<meta name="theme-color" content="#2d2d2d">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="manifest" href="manifest.json">
+<title>Конвертер валют</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div class="app">
+
+  <main class="board">
+    <button type="button" class="cur-row" id="rowFrom" aria-label="Изменить исходную валюту">
+      <span class="cur-id">
+        <span class="flag" id="flagFrom"></span>
+        <span class="cur-code" id="codeFrom">UAH</span>
+      </span>
+      <span class="cur-value" id="valFrom">0</span>
+    </button>
+
+    <div class="divider"></div>
+
+    <button type="button" class="cur-row" id="rowTo" aria-label="Изменить целевую валюту">
+      <span class="cur-id">
+        <span class="flag" id="flagTo"></span>
+        <span class="cur-code" id="codeTo">USD</span>
+      </span>
+      <span class="cur-value" id="valTo">0</span>
+    </button>
+  </main>
+
+  <section class="keypad" id="keypad">
+    <button type="button" class="key key-fn" data-action="clear">C</button>
+    <button type="button" class="key key-fn" data-action="backspace" aria-label="Удалить">
+      <svg viewBox="0 0 24 24" width="27" height="27" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="20" y1="12" x2="4.6" y2="12"></line>
+        <polyline points="11 5.4 4.6 12 11 18.6"></polyline>
+      </svg>
+    </button>
+    <button type="button" class="key key-fn" data-action="swap" aria-label="Поменять валюты">
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="7 20 7 4"></polyline>
+        <polyline points="3 8 7 4 11 8"></polyline>
+        <polyline points="17 4 17 20"></polyline>
+        <polyline points="13 16 17 20 21 16"></polyline>
+      </svg>
+    </button>
+    <button type="button" class="key key-op" data-op="/">÷</button>
+
+    <button type="button" class="key" data-digit="7">7</button>
+    <button type="button" class="key" data-digit="8">8</button>
+    <button type="button" class="key" data-digit="9">9</button>
+    <button type="button" class="key key-op" data-op="*">×</button>
+
+    <button type="button" class="key" data-digit="4">4</button>
+    <button type="button" class="key" data-digit="5">5</button>
+    <button type="button" class="key" data-digit="6">6</button>
+    <button type="button" class="key key-op" data-op="-">−</button>
+
+    <button type="button" class="key" data-digit="1">1</button>
+    <button type="button" class="key" data-digit="2">2</button>
+    <button type="button" class="key" data-digit="3">3</button>
+    <button type="button" class="key key-op" data-op="+">+</button>
+
+    <button type="button" class="key key-fn" data-action="percent">%</button>
+    <button type="button" class="key" data-digit="0">0</button>
+    <button type="button" class="key" data-action="comma">,</button>
+    <button type="button" class="key key-op" data-action="equals">=</button>
+  </section>
+
+  <footer class="ratebar">
+    <button type="button" class="icon-btn" id="refreshBtn" aria-label="Обновить курс">
+      <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="21 4 21 9.5 15.5 9.5"></polyline>
+        <polyline points="3 20 3 14.5 8.5 14.5"></polyline>
+        <path d="M4.2 9.2a8 8 0 0 1 13.2-3L21 9.5M3 14.5l3.6 3.3a8 8 0 0 0 13.2-3"></path>
+      </svg>
+    </button>
+
+    <div class="rate-info">
+      <div class="rate-line" id="rateLine">1 UAH = — USD</div>
+      <div class="rate-age" id="rateAge">Загрузка…</div>
+    </div>
+
+    <button type="button" class="icon-btn" id="infoBtn" aria-label="Информация">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9.2"></circle>
+        <line x1="12" y1="11" x2="12" y2="16.5"></line>
+        <circle cx="12" cy="7.7" r="0.9" fill="currentColor" stroke="none"></circle>
+      </svg>
+    </button>
+  </footer>
+</div>
+
+<!-- Шторка выбора валюты -->
+<div class="sheet-backdrop" id="pickerBackdrop">
+  <div class="sheet" id="pickerSheet" role="dialog" aria-modal="true" aria-label="Выбор валюты">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">Выберите валюту</div>
+    <div class="cur-list" id="curList"></div>
+  </div>
+</div>
+
+<!-- Шторка информации -->
+<div class="sheet-backdrop" id="infoBackdrop">
+  <div class="sheet" id="infoSheet" role="dialog" aria-modal="true" aria-label="Информация о курсах">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">Курсы валют</div>
+    <div class="rates-list" id="ratesList"></div>
+    <div class="sheet-meta" id="sheetMeta"></div>
+    <div class="sheet-note">Источник: Supabase · open.er-api.com</div>
+  </div>
+</div>
+
+<div id="statusMessage" class="status-message"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
