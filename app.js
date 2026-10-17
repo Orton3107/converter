@@ -10,7 +10,8 @@ const CURRENCIES = {
   UAH: { symbol: '₴', name: 'Гривна' },
   MDL: { symbol: 'L', name: 'Молдавский лей' },
   EUR: { symbol: '€', name: 'Евро' },
-  USD: { symbol: '$', name: 'Доллар США' }
+  USD: { symbol: '$', name: 'Доллар США' },
+  TRY: { symbol: '₺', name: 'Турецкая лира' }
 };
 
 const CACHE_KEY = 'converter_rates_cache';
@@ -29,6 +30,16 @@ function stars(count, cx, cy, r, size, color) {
     out += `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${size}" fill="${color}"/>`;
   }
   return out;
+}
+
+function starPoints(cx, cy, rOuter, rInner, rotation) {
+  const pts = [];
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 ? rInner : rOuter;
+    const a = (rotation + i * 36 - 90) * Math.PI / 180;
+    pts.push(`${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`);
+  }
+  return pts.join(' ');
 }
 
 function usDots() {
@@ -60,6 +71,12 @@ const FLAGS = {
   EUR: `<svg viewBox="0 0 60 40" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
       <rect width="60" height="40" fill="#003399"/>
       ${stars(12, 30, 20, 10.5, 1.55, '#FFCC00')}
+    </svg>`,
+  TRY: `<svg viewBox="0 0 60 40" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+      <rect width="60" height="40" fill="#E30A17"/>
+      <circle cx="22.5" cy="20" r="10" fill="#ffffff"/>
+      <circle cx="27.5" cy="20" r="8" fill="#E30A17"/>
+      <polygon points="${starPoints(36.2, 20, 5, 2, 90)}" fill="#ffffff"/>
     </svg>`,
   USD: `<svg viewBox="0 0 60 40" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
       <rect width="60" height="40" fill="#ffffff"/>
@@ -97,6 +114,7 @@ const el = {
   infoBackdrop: document.getElementById('infoBackdrop'),
   ratesList: document.getElementById('ratesList'),
   sheetMeta: document.getElementById('sheetMeta'),
+  sheetNote: document.getElementById('sheetNote'),
   statusMessage: document.getElementById('statusMessage')
 };
 
@@ -111,6 +129,9 @@ const state = {
   justEvaluated: false,
   rates: null,
   lastUpdate: null,
+  source: null,
+  status: 'loading',
+  providerUpdate: null,
   pickerSlot: 'from'
 };
 
@@ -244,9 +265,16 @@ function ageLabel(ts) {
 }
 
 function updateAge() {
-  const text = ageLabel(state.lastUpdate);
-  el.rateAge.textContent = text;
-  el.rateAge.className = 'rate-age' + (state.lastUpdate && Date.now() - state.lastUpdate > 3 * 3600 * 1000 ? ' stale' : '');
+  if (state.status === 'error') {
+    el.rateAge.textContent = 'Нет данных';
+    el.rateAge.className = 'rate-age error';
+    return;
+  }
+  const prefix = state.status === 'stale' ? 'Кэш · ' : '';
+  el.rateAge.textContent = prefix + ageLabel(state.lastUpdate);
+  const stale = state.status === 'stale' ||
+    (state.lastUpdate && Date.now() - state.lastUpdate > 3 * 3600 * 1000);
+  el.rateAge.className = 'rate-age' + (stale ? ' stale' : '');
 }
 
 /* ═══════════════════════════════════════════════
@@ -402,7 +430,7 @@ function openInfo() {
     el.ratesList.innerHTML = '<div class="sheet-meta">Курсы ещё не загружены</div>';
     el.sheetMeta.textContent = '';
   } else {
-    el.ratesList.innerHTML = Object.keys(CURRENCIES).map(code => `
+    el.ratesList.innerHTML = Object.keys(CURRENCIES).filter(code => state.rates[code]).map(code => `
       <div class="rate-option">
         <span class="flag">${FLAGS[code]}</span>
         <span class="opt-code">${code}</span>
@@ -410,7 +438,15 @@ function openInfo() {
         <span class="opt-value">${formatRate(state.rates[code])}</span>
       </div>
     `).join('');
-    el.sheetMeta.textContent = `Курсы к 1 USD · обновлено: ${ageLabel(state.lastUpdate)}`;
+    let meta = `Курсы к 1 USD · проверено: ${ageLabel(state.lastUpdate)}`;
+    if (state.providerUpdate) {
+      const d = new Date(state.providerUpdate);
+      meta += ` · данные провайдера за ${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+    }
+    el.sheetMeta.textContent = meta;
+    el.sheetNote.textContent = state.source === 'open.er-api.com'
+      ? 'Источник: open.er-api.com (обновляет курс раз в сутки)'
+      : `Источник: ${state.source || '—'}`;
   }
   el.infoBackdrop.classList.add('open');
 }
@@ -424,14 +460,28 @@ el.infoBackdrop.addEventListener('click', (e) => {
    НАСТРОЙКИ
    ═══════════════════════════════════════════════ */
 function savePrefs() {
+  const val = JSON.stringify({ from: state.from, to: state.to });
   try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify({ from: state.from, to: state.to }));
+    localStorage.setItem(PREFS_KEY, val);
+  } catch (e) { /* приватный режим или заблокированное хранилище */ }
+  try {
+    // cookie — вторая линия обороны: localStorage в standalone-PWA иногда недоступен
+    document.cookie = `${PREFS_KEY}=${encodeURIComponent(val)};path=/;max-age=31536000;SameSite=Lax`;
   } catch (e) { /* игнорируем */ }
+}
+
+function readPrefsRaw() {
+  try {
+    const fromLS = localStorage.getItem(PREFS_KEY);
+    if (fromLS) return fromLS;
+  } catch (e) { /* игнорируем */ }
+  const m = document.cookie.match(new RegExp('(?:^|; )' + PREFS_KEY + '=([^;]*)'));
+  return m ? decodeURIComponent(m[1]) : null;
 }
 
 function loadPrefs() {
   try {
-    const raw = localStorage.getItem(PREFS_KEY);
+    const raw = readPrefsRaw();
     if (!raw) return;
     const p = JSON.parse(raw);
     if (CURRENCIES[p.from] && CURRENCIES[p.to] && p.from !== p.to) {
@@ -466,47 +516,96 @@ function saveToCache(ratesData, updateTime, source) {
    ═══════════════════════════════════════════════ */
 let sb = null;
 
+const LIVE_API_URL = 'https://open.er-api.com/v6/latest/USD';
+const DB_STALE_MS = 15 * 60 * 1000; // если в базе старее — тянем живой курс из API
+
+async function fetchFromSupabase() {
+  if (!sb) throw new Error('нет подключения к базе');
+
+  const { data, error } = await sb.from('currency_rates').select('*');
+  if (error) throw new Error(error.message);
+  if (!data || !data.length) throw new Error('в базе нет курсов');
+
+  const parsed = {};
+  let ts = null;
+  data.forEach(row => {
+    const rate = parseFloat(row.rate_to_usd);
+    if (!isFinite(rate) || rate <= 0) return;
+    parsed[row.currency_code] = rate;
+    const t = new Date(row.last_updated).getTime();
+    if (!isNaN(t) && (!ts || t > ts)) ts = t;
+  });
+
+  if (!Object.keys(parsed).length) throw new Error('некорректные данные в базе');
+  return { rates: parsed, ts: ts || Date.now() };
+}
+
+async function fetchFromLiveApi() {
+  const res = await fetch(LIVE_API_URL, { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+
+  const data = await res.json();
+  if (data.result !== 'success' || !data.rates) throw new Error('некорректный ответ API');
+
+  const parsed = {};
+  Object.keys(CURRENCIES).forEach(code => {
+    const rate = parseFloat(data.rates[code]);
+    if (isFinite(rate) && rate > 0) parsed[code] = rate;
+  });
+  if (!Object.keys(parsed).length) throw new Error('в ответе нет нужных валют');
+
+  // ER-API обновляет курс раз в сутки, поэтому его «возраст» — отдельное поле:
+  // в строке курса показываем время нашей синхронизации, а дату провайдера — в шторке «i»
+  const providerTs = data.time_last_update_unix ? data.time_last_update_unix * 1000 : null;
+  return { rates: parsed, ts: Date.now(), providerTs };
+}
+
+function applyRates(rates, ts, source, status = 'ok', providerTs = null) {
+  state.rates = rates;
+  state.lastUpdate = ts;
+  state.source = source;
+  state.status = status;
+  state.providerUpdate = providerTs;
+  saveToCache(rates, ts, source);
+  render();
+}
+
 async function fetchRates({ manual = false } = {}) {
   el.refreshBtn.classList.add('loading');
   try {
-    if (!sb) throw new Error('нет подключения к базе');
+    let db = null;
+    try {
+      db = await fetchFromSupabase();
+    } catch (e) { /* база недоступна — идём дальше */ }
 
-    const { data, error } = await sb.from('currency_rates').select('*');
-    if (error) throw new Error(error.message);
+    const dbFresh = db && (Date.now() - db.ts) < DB_STALE_MS;
 
-    if (!data || !data.length) throw new Error('в базе нет курсов');
+    // Кнопка «обновить» всегда идёт за живым курсом; автозагрузка — только если база устарела
+    if (manual || !dbFresh) {
+      try {
+        const live = await fetchFromLiveApi();
+        applyRates(live.rates, live.ts, 'open.er-api.com', 'ok', live.providerTs);
+        if (manual) showStatus('Курс обновлён', 'success');
+        return;
+      } catch (e) { /* нет сети — падаем в базу или кэш */ }
+    }
 
-    const parsed = {};
-    let updateTime = null;
-    data.forEach(row => {
-      const rate = parseFloat(row.rate_to_usd);
-      if (isNaN(rate)) return;
-      parsed[row.currency_code] = rate;
-      const t = new Date(row.last_updated).getTime();
-      if (!isNaN(t) && (!updateTime || t > updateTime)) updateTime = t;
-    });
+    if (db) {
+      applyRates(db.rates, db.ts, 'Supabase', dbFresh ? 'ok' : 'stale');
+      if (manual) showStatus('Курс обновлён из базы', 'success');
+      return;
+    }
 
-    if (!Object.keys(parsed).length) throw new Error('некорректные данные в базе');
-
-    state.rates = parsed;
-    state.lastUpdate = updateTime || Date.now();
-    saveToCache(parsed, state.lastUpdate, 'supabase');
-    render();
-    if (manual) showStatus('Курс обновлён', 'success');
-  } catch (error) {
     const cached = loadFromCache();
     if (cached && cached.data.rates) {
-      state.rates = cached.data.rates;
-      state.lastUpdate = cached.data.timestamp;
-      render();
-      el.rateAge.className = 'rate-age stale';
-      el.rateAge.textContent = 'Кэш · ' + ageLabel(state.lastUpdate);
-      if (manual) showStatus(`Ошибка сети. Используются кэшированные курсы`, 'error');
-    } else {
-      el.rateAge.textContent = 'Нет данных';
-      el.rateAge.className = 'rate-age error';
-      showStatus(`Не удалось загрузить курсы: ${error.message}`, 'error');
+      applyRates(cached.data.rates, cached.data.timestamp, cached.data.source || 'кэш', 'stale');
+      if (manual) showStatus('Нет сети. Используются кэшированные курсы', 'error');
+      return;
     }
+
+    state.status = 'error';
+    updateAge();
+    showStatus('Не удалось загрузить курсы', 'error');
   } finally {
     el.refreshBtn.classList.remove('loading');
   }
@@ -551,9 +650,7 @@ async function init() {
   const cached = loadFromCache();
 
   if (cached && cached.data.rates && !forceRefresh) {
-    state.rates = cached.data.rates;
-    state.lastUpdate = cached.data.timestamp;
-    render();
+    applyRates(cached.data.rates, cached.data.timestamp, cached.data.source || 'кэш', 'stale');
     if (cached.isFresh) return;
   }
 

@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════
 // КОНФИГУРАЦИЯ
 // ═══════════════════════════════════════════════
-const CACHE_VERSION = 'converter-v3';
+const CACHE_VERSION = 'converter-v4';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const API_CACHE = `${CACHE_VERSION}-api`;
 
